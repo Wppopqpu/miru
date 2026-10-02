@@ -163,6 +163,28 @@ Miru currently requires a compositor that exposes both `wlr-layer-shell` and
 Support for compositors without these protocols may be added later through
 alternative capture and overlay mechanisms.
 
+#### NVIDIA EGL/GLES black overlay
+
+On some NVIDIA EGL/GLES setups, older Miru builds can create the overlay and
+capture the desktop successfully but display the magnified frame as an opaque
+black surface. If `spotlight` or annotations work while Magnifier mode is
+black, the problem is in the captured texture upload path rather than
+Wayland protocol support.
+
+First update to a build containing the NVIDIA texture-upload fix. As a
+temporary diagnostic workaround, Miru can use Mesa's CPU renderer instead:
+
+```bash
+LIBGL_ALWAYS_SOFTWARE=1 \
+MESA_LOADER_DRIVER_OVERRIDE=llvmpipe \
+__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json \
+miru-daemon
+```
+
+This bypasses the NVIDIA EGL/GLES path and increases CPU usage. For a user
+service, set the same variables in the service environment and restart the
+service. Remove them after upgrading to a build with the fix.
+
 ### Installing
 
 #### Arch Linux (AUR)
