@@ -294,15 +294,31 @@ void gl_renderer_upload_texture(
     );
 
     GLenum gl_fmt = GL_RGBA;
-    bool need_swizzle = false;
+    const uint8_t *upload_pixels = pixels;
+    uint8_t *rgba_pixels = NULL;
 
     switch (format) {
     case WL_SHM_FORMAT_ARGB8888:
     case WL_SHM_FORMAT_XRGB8888:
     case DRM_FORMAT_ARGB8888:
     case DRM_FORMAT_XRGB8888:
-        // little-endian BGRA in memory
-        gl_fmt = GL_BGRA_EXT;
+        /* Avoid relying on GL_EXT_texture_format_BGRA8888 on NVIDIA EGL. */
+        rgba_pixels = malloc((size_t)width * (size_t)height * 4);
+        if (!rgba_pixels) {
+            MIRU_LOG("gl_renderer: failed to allocate RGBA upload buffer");
+            return;
+        }
+        for (int y = 0; y < height; y++) {
+            const uint8_t *src = pixels + (size_t)y * stride;
+            uint8_t *dst = rgba_pixels + (size_t)y * width * 4;
+            for (int x = 0; x < width; x++) {
+                dst[x * 4 + 0] = src[x * 4 + 2];
+                dst[x * 4 + 1] = src[x * 4 + 1];
+                dst[x * 4 + 2] = src[x * 4 + 0];
+                dst[x * 4 + 3] = 0xFF;
+            }
+        }
+        upload_pixels = rgba_pixels;
         break;
     case WL_SHM_FORMAT_ABGR8888:
     case WL_SHM_FORMAT_XBGR8888:
@@ -314,8 +330,8 @@ void gl_renderer_upload_texture(
     }
 
     glBindTexture(GL_TEXTURE_2D, r->texture);
-    if (stride == width * 4) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, gl_fmt, GL_UNSIGNED_BYTE, pixels);
+    if (rgba_pixels || stride == width * 4) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, gl_fmt, GL_UNSIGNED_BYTE, upload_pixels);
     } else {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, gl_fmt, GL_UNSIGNED_BYTE, NULL);
         for (int y = 0; y < height; y++) {
@@ -323,9 +339,14 @@ void gl_renderer_upload_texture(
         }
     }
 
+    GLenum gl_error = glGetError();
+    if (gl_error != GL_NO_ERROR)
+        MIRU_LOG("gl_renderer: texture upload GL error=0x%04x", gl_error);
+
     r->tex_w = width;
     r->tex_h = height;
     gl_renderer_set_upscale(r, r->upscale_mode);
+    free(rgba_pixels);
 }
 
 void gl_renderer_draw(
